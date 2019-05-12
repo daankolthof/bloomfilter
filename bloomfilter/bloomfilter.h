@@ -9,7 +9,7 @@ template <typename T>
 class Bloomfilter
 {
 public:
-	typedef T object_type;
+	typedef T value_type;
 
 	Bloomfilter()
 	: object_count_(0)
@@ -27,7 +27,7 @@ public:
 	~Bloomfilter()
 	{}
 
-	void add(const object_type& object)
+	void insert(const T& object)
 	{
 		const size_t object_hash = hash(object);
 		for (size_t i = 0; i < hash_function_count; i++)
@@ -38,7 +38,13 @@ public:
 		++object_count_;
 	}
 
-	bool contains(const object_type& object) const
+	void clear()
+	{
+		bloomfilter_store_.reset();
+		object_count_ = 0;
+	}
+
+	bool contains(const T& object) const
 	{
 		const size_t object_hash = hash(object);
 		for (size_t i = 0; i < hash_function_count; i++)
@@ -54,15 +60,20 @@ public:
 		return object_count_;
 	}
 
+	bool empty() const
+	{
+		return 0 == object_count();
+	}
+
 private:
 
 	static const size_t bloomfilter_store_size = 8192 * 8; // Size of the bloom filter state in bits.
 	static const size_t hash_function_count = 6; // Number of hash functions to use when hashing objects.
 
 	inline
-	static size_t hash(const object_type& val)
+	static size_t hash(const T& val)
 	{
-		return std::hash<object_type>()(val);
+		return std::hash<T>()(val);
 	}
 
 	std::bitset<bloomfilter_store_size> bloomfilter_store_;
