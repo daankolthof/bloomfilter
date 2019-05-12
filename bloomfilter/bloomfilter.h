@@ -1,55 +1,27 @@
-#pragma once
+#ifndef BLOOMFILTER_H
+#define BLOOMFILTER_H
 
-#include <cstdint>
-#include <functional>
-#include <iostream>
+#include <bitset>
+#include <chrono>
+#include <random>
 
-// Storage in 64 bits and using std::hash to calculate object representation.
-template <typename ObjectType>
-class DefaultHash64Bit
-{
-
-public:
-	typedef ObjectType	object_type;
-
-	DefaultHash64Bit()
-	: bloomfilter_store_(0)
-	{}
-
-	void add(const object_type& object)
-	{
-		const internal_storage_type object_hash = hash(object);
-		bloomfilter_store_ |= object_hash;
-	}
-
-	bool contains(const object_type& object) const
-	{
-		const internal_storage_type object_hash = hash(object);
-		const internal_storage_type and_result = object_hash & bloomfilter_store_;
-		return and_result == object_hash;
-	}
-
-private:
-	typedef uint64_t	internal_storage_type;
-
-	static internal_storage_type hash(object_type val)
-	{
-		return std::hash<object_type>()(val);
-	}
-
-	internal_storage_type bloomfilter_store_;
-};
-
-template <typename FilterStorageHashType>
+template <typename T>
 class Bloomfilter
 {
 public:
-	typedef typename FilterStorageHashType::object_type object_type;
+	typedef T object_type;
 
 	Bloomfilter()
 	: object_count_(0)
 	{
+		const uint64_t generator_seed = std::chrono::system_clock::now().time_since_epoch().count();
+		std::mt19937_64 generator(generator_seed);
+		std::uniform_int_distribution<size_t> distribution;
 
+		for (size_t i = 0; i < hash_function_count; i++)
+		{
+			bitmasks[i] = distribution(generator);
+		}
 	}
 
 	~Bloomfilter()
@@ -57,13 +29,24 @@ public:
 
 	void add(const object_type& object)
 	{
-		filterStorage_.add(object);
+		const size_t object_hash = hash(object);
+		for (size_t i = 0; i < hash_function_count; i++)
+		{
+			const size_t index_to_set = (object_hash ^ bitmasks[i]) % bloomfilter_store_size;
+			bloomfilter_store_[index_to_set] = true;
+		}
 		++object_count_;
 	}
 
 	bool contains(const object_type& object) const
 	{
-		return filterStorage_.contains(object);
+		const size_t object_hash = hash(object);
+		for (size_t i = 0; i < hash_function_count; i++)
+		{
+			const size_t index_to_get = (object_hash ^ bitmasks[i]) % bloomfilter_store_size;
+			if (!bloomfilter_store_[index_to_get]) return false;
+		}
+		return true;
 	}
 
 	size_t object_count() const
@@ -72,7 +55,20 @@ public:
 	}
 
 private:
-	FilterStorageHashType filterStorage_;
+
+	static const size_t bloomfilter_store_size = 8192 * 8; // Size of the bloom filter state in bits.
+	static const size_t hash_function_count = 6; // Number of hash functions to use when hashing objects.
+
+	inline
+	static size_t hash(const object_type& val)
+	{
+		return std::hash<object_type>()(val);
+	}
+
+	std::bitset<bloomfilter_store_size> bloomfilter_store_;
+	size_t bitmasks[hash_function_count];
+
 	size_t object_count_;
 };
 
+#endif // BLOOMFILTER_H
